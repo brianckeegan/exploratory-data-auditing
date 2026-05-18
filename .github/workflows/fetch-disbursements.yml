@@ -1,0 +1,95 @@
+name: Fetch new Statement of Disbursements data
+
+# Runs once a year on January 6 (by then the prior calendar year's quarterly
+# Statement of Disbursements detail files are published) and on manual
+# dispatch. It discovers any newly available quarterly detail files from the
+# canonical House pages, downloads them, refreshes the tracked source manifest,
+# uploads the raw files as a build artifact, and opens a pull request.
+#
+# The raw CSVs are intentionally NOT committed (see .gitignore / Decision 2);
+# `data/SOURCE_MANIFEST.csv` is the small, diff-reviewable archive index that
+# IS tracked. Regenerating the pinned Git-LFS artifact `all_disbursements.csv`
+# is a deliberate, human-reviewed step (it changes the reproducibility pins in
+# cleaning.ipynb), so this workflow opens a PR with a checklist rather than
+# silently rewriting the cleaned data on the default branch.
+
+on:
+  schedule:
+    - cron: "0 6 6 1 *"   # 06:00 UTC, January 6, every year
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: fetch-disbursements
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Discover and download new disbursement files
+        id: fetch
+        run: |
+          python scripts/fetch_data.py --discover | tee fetch.log
+          echo "added<<EOF" >> "$GITHUB_OUTPUT"
+          grep -E '^added [0-9]+ file' fetch.log || echo "no new files"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Upload fetched raw files as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: disbursements-raw-${{ github.run_id }}
+          path: |
+            data/*.csv
+            data/*.xlsx
+          if-no-files-found: ignore
+          retention-days: 90
+
+      - name: Open pull request for the refreshed archive index
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/disbursements-refresh
+          title: "chore(data): refresh Statement of Disbursements archive"
+          commit-message: "chore(data): refresh source manifest from House SoD"
+          add-paths: data/SOURCE_MANIFEST.csv
+          body: |
+            Automated annual refresh of the U.S. House Statement of
+            Disbursements archive (scheduled January 6).
+
+            `data/SOURCE_MANIFEST.csv` has been regenerated from the files
+            discovered on house.gov; the raw files themselves are attached to
+            this workflow run as the `disbursements-raw-*` artifact (they are
+            gitignored by design — Decision 2).
+
+            **Fetch log**
+
+            ```
+            ${{ steps.fetch.outputs.added }}
+            ```
+
+            **Maintainer checklist** (only if new quarters appeared)
+            - [ ] Download the workflow artifact into `data/`
+            - [ ] Add the new quarter(s) to `EXPECTED_QUARTERS` in `cleaning.ipynb`
+            - [ ] `Restart & Run All` `cleaning.ipynb`; update the pinned
+                  headline-numbers cell with the new totals (documented reason)
+            - [ ] Re-run `analysis.ipynb`; sanity-check the new period
+            - [ ] Commit the regenerated `all_disbursements.csv` (Git LFS)

@@ -207,3 +207,26 @@ marimo/_lsp/
 __marimo__/
 
 .DS_Store
+
+# ----------------------------------------------------------------------------
+# Exploratory Data Auditing project
+# ----------------------------------------------------------------------------
+# Raw House Statement of Disbursements source files (~1 GB) are NOT committed.
+# Retrieve them with `python scripts/fetch_data.py`. Only the cleaned product
+# `all_disbursements.csv` (Git LFS, at repo root) and the small tracked archive
+# index `data/SOURCE_MANIFEST.csv` are versioned.
+/data/*
+!/data/SOURCE_MANIFEST.csv
+
+# Biographical / reference inputs produced by scripts/fetch_biographical.py
+/propublica_members.csv
+/legislators-historical.csv
+/census_state.txt
+/census_cenpop2020.csv
+/member_data_2015_2023.csv
+
+# Secrets
+/propublica_key.txt
+
+# Jupyter
+.ipynb_checkpoints/

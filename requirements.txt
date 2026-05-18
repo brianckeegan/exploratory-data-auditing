@@ -1,0 +1,17 @@
+# Exploratory Data Auditing — pinned to the interpreter used to produce the
+# cleaning.ipynb pinned headline numbers (Python 3.12, pandas 3.x).
+pandas>=2.2
+numpy>=1.26
+scipy>=1.11
+matplotlib>=3.8
+seaborn>=0.13
+networkx>=3.2
+geopy>=2.4
+beautifulsoup4>=4.12
+lxml>=5.0
+requests>=2.31
+openpyxl>=3.1
+PyYAML>=6.0
+jupyter>=1.0
+nbconvert>=7.10
+nbformat>=5.10
