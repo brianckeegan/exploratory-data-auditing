@@ -230,3 +230,6 @@ __marimo__/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Claude
+.claude/worktrees/
