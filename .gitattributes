@@ -1,0 +1,8 @@
+# The cleaned analysis dataset is large (~1.2 GB) and is the only data file
+# committed to the repository. Track it with Git LFS so the regular git
+# history stays small. One-time setup: `git lfs install`.
+all_disbursements.csv filter=lfs diff=lfs merge=lfs -text
+
+# Notebooks: keep JSON in-tree (nbdime gives readable diffs:
+# `pip install nbdime && nbdime config-git --enable`).
+*.ipynb -text
