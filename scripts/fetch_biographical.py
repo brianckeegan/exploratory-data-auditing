@@ -68,9 +68,9 @@ def fetch_legislators(force: bool) -> None:
     # (columns: id, gender, party, first_name, last_name) from the canonical,
     # still-maintained congress-legislators roster instead of the retired API.
     both = pd.concat([curr, hist], ignore_index=True)
-    members = both.rename(columns={"bioguide_id": "id"})[
-        ["id", "gender", "party", "first_name", "last_name"]
-    ].dropna(subset=["id"]).drop_duplicates(subset=["id"])
+    members = both[
+        ["bioguide_id", "gender", "party", "first_name", "last_name", "type", "district", "state"]
+    ].dropna(subset=["bioguide_id"]).drop_duplicates(subset=["bioguide_id"])
     _write(members, "propublica_members.csv")
 
 
