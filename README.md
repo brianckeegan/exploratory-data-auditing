@@ -18,12 +18,20 @@ and obtain the same numbers the article reports.
 ```
 exploratory-data-auditing/
 ├── cleaning.ipynb              schema normalization + validation
-│                               → writes all_disbursements.csv
-├── analysis.ipynb              anomaly analysis (consumes the cleaned data)
-├── all_disbursements.csv       cleaned product — the ONLY data file in git
-│                               (tracked via Git LFS, ~1.2 GB)
-├── data/                       raw quarterly source files (gitignored)
-│   └── SOURCE_MANIFEST.csv     tracked index: filename, size, sha256
+│                               → writes data/all_disbursements.csv
+├── analysis_v3.ipynb           anomaly analysis (consumes the cleaned data)
+├── data/                       data root (mostly gitignored — see .gitignore)
+│   ├── SOURCE_MANIFEST.csv     tracked index: filename, size, sha256
+│   ├── disbursements/          raw quarterly source files (gitignored, ~1 GB)
+│   ├── all_disbursements.csv   cleaned product (gitignored, ~1.2 GB)
+│   ├── propublica_members.csv  member id → gender / party / name
+│   ├── legislators-historical.csv  congress-legislators historical roster
+│   ├── census_state.txt        Census ANSI state codes
+│   ├── census_cenpop2020.csv   Census 2020 centers of population
+│   ├── member_data_2015_2023.csv  House Clerk office building/room
+│   ├── personnel_bp.gexf       bipartite member↔payee personnel network
+│   └── personnel_proj.gexf     member-projection of the personnel network
+├── images/                     figures produced by analysis_v3.ipynb
 ├── scripts/
 │   ├── fetch_data.py           retrieve / discover raw disbursement files
 │   └── fetch_biographical.py   enrichment + reference inputs
@@ -31,7 +39,7 @@ exploratory-data-auditing/
 │   └── fetch-disbursements.yml annual (Jan 6) data-refresh automation
 ├── requirements.txt            pinned Python environment
 ├── .gitattributes              Git LFS rule for all_disbursements.csv
-├── .gitignore                  raw data / secrets / caches excluded
+├── .gitignore                  raw data / cleaned product / caches excluded
 ├── LICENSE                     MIT
 └── README.md                   this file
 ```
@@ -39,11 +47,11 @@ exploratory-data-auditing/
 The data pipeline is strictly one-directional:
 
 ```
-data/*.{csv,xlsx}  ──cleaning.ipynb──▶  all_disbursements.csv  ──analysis.ipynb──▶  figures / findings
-   (62 raw files)     normalize+validate    (19-col contract)        anomaly tests
+data/disbursements/*.{csv,xlsx}  ──cleaning.ipynb──▶  data/all_disbursements.csv  ──analysis_v3.ipynb──▶  images/ + GEXF
+        (62 raw files)              normalize+validate       (19-col contract)            anomaly tests
 ```
 
-`analysis.ipynb` performs **no** schema normalization or datetime parsing —
+`analysis_v3.ipynb` performs **no** schema normalization or datetime parsing —
 that is exclusively `cleaning.ipynb`'s contract.
 
 ---
@@ -52,16 +60,17 @@ that is exclusively `cleaning.ipynb`'s contract.
 
 ### `cleaning.ipynb` — schema normalization & validation
 
-Reads every quarterly file under `data/`, normalizes four historical schema
-eras plus two single-quarter transitional schemas into one common 19-column
-schema, validates it, and writes `all_disbursements.csv`. Section by section:
+Reads every quarterly file under `data/disbursements/`, normalizes four
+historical schema eras plus two single-quarter transitional schemas into one
+common 19-column schema, validates it, and writes
+`data/all_disbursements.csv`. Section by section:
 
 | Section | What it does |
 |---|---|
 | **Title** | Provenance, scope, pinned-numbers contract (one `#` H1, byline, MIT). |
 | **Imports** | Single imports cell; no plotting, no network I/O. |
 | **Configuration & provenance** | `DATA_DIR`, `EXPECTED_QUARTERS` (58), `EXCLUDED_QUARTERS` (2010), `schema_era()` dispatch, the schema-era reference table. |
-| **File discovery** | Globs `data/`, parses the `YYYYQ#` key, asserts all 62 source files present. |
+| **File discovery** | Globs `data/disbursements/`, parses the `YYYYQ#` key, asserts all 62 source files present. |
 | **Common-schema contract** | `ADAPTER_COLUMNS` (15) / `COMMON_COLUMNS` (19); `validate_schema()` asserted by every adapter and the final frame. |
 | **Raw read helper & parsers** | `read_raw` (latin1/xlsx, header-whitespace strip, unnamed-column drop), `_to_amount`, `_to_dt` (explicit formats only — no dateutil OOB), `_to_txn_date` (reconstructs the year-less `MM-DD`/`DD-Mon` dates of 2011–2016), `_drop_total_rows`. |
 | **Per-schema adapters A–E** | One adapter per era; every domain-knowledge fix from the original notebook preserved as an explicit, commented, **asserted** step (Schema-1 no-totals proof; the 2017Q2 three-column positional shift; the 2018Q2 mini-schema; the 2022Q4 overhaul; the 2023–2025 office-level Schema 3 with `BIOGUIDE_ID` null). |
@@ -69,21 +78,21 @@ schema, validates it, and writes `all_disbursements.csv`. Section by section:
 | **Derived columns** | `CATEGORY` normalization; Congress-derived `TERM_QUARTER` (1–8); `PERIOD_DATE` / `DATE_IS_RECONSTRUCTED`. |
 | **Integrity checks** | Asserted: quarter coverage, power-of-two truncation watch, AMOUNT numeric, date ranges/types, `BIOGUIDE_ID` null audit, category consistency, totals removal, the 2017Q2 shift correctness, full contract conformance. |
 | **Pinned headline numbers** | Hard-asserts the 58/6,233,106/6,040,756/192,350/$20.17 B figures — a loud, intentional failure if the source shifts. |
-| **Write cleaned output** | Writes `all_disbursements.csv` and round-trips it (shape, columns, datetime dtypes). |
+| **Write cleaned output** | Writes `data/all_disbursements.csv` and round-trips it (shape, columns, datetime dtypes). |
 
-**Common schema (`all_disbursements.csv`, 19 columns):**
+**Common schema (`data/all_disbursements.csv`, 19 columns):**
 `YEAR-QUARTER, YEAR, QUARTER, TERM_QUARTER, BIOGUIDE_ID, OFFICE, PROGRAM,
 CATEGORY, PAYEE, PURPOSE, AMOUNT, DATE, PERIOD_DATE, DATE_IS_RECONSTRUCTED,
 START DATE, END DATE, TRANSCODE, RECORDID, VOUCHER_ID`.
 
-### `analysis.ipynb` — anomaly analysis
+### `analysis_v3.ipynb` — anomaly analysis
 
-Consumes `all_disbursements.csv` (plus locally-cached enrichment inputs) and
-runs the *Exploratory Data Auditing* test battery. Front matter: title +
-`## External inputs` provenance, single imports cell, the cleaned-data load
-with an **integration-contract assertion** (column set, datetime dtypes, 2011
-start), and the `members_df` filter scoped to 2011–2022 (Decision 3). The
-analytic body (preserved as authored — Decision 4) covers:
+Consumes `data/all_disbursements.csv` (plus locally-cached enrichment inputs
+in `data/`) and runs the *Exploratory Data Auditing* test battery. Front
+matter: title + `## External inputs` provenance, single imports cell, the
+cleaned-data load with an **integration-contract assertion** (column set,
+datetime dtypes, 2011 start), and the `members_df` filter scoped to 2011–2022
+(Decision 3). The analytic body (preserved as authored — Decision 4) covers:
 
 - **Continuous anomalies** — personnel-compensation outliers, last-digit /
   pre- vs post-decimal distributions, **Benford's law** by category, by
@@ -96,7 +105,13 @@ analytic body (preserved as authored — Decision 4) covers:
 - **Spatial anomalies** — travel vs. distance-to-DC (Census centers of
   population).
 - **Network analysis** — the member↔payee bipartite personnel network and its
-  projection (GEXF exports), with payee-name normalization.
+  projection, exported as `data/personnel_bp.gexf` and
+  `data/personnel_proj.gexf`, with payee-name normalization.
+
+All figures are written to `images/` (Benford panels, personnel-compensation
+outliers, decimal/digit distributions, two-largest ratios, categorical
+profiles, gender / party / term-quarter spending, COVID temporal,
+inter-event timing, travel-distance).
 
 Analysis-specific transforms (personnel payee-name normalization,
 gender/party/office enrichment, per-test statistical subsetting) deliberately
@@ -111,7 +126,7 @@ remain in this notebook.
 Retrieves the raw quarterly SoD files (the ~1 GB that is *not* committed) and
 maintains the tracked archive index.
 
-- *(default)* download the known pinned source set into `data/`.
+- *(default)* download the known pinned source set into `data/disbursements/`.
 - `--discover` — scrape the canonical House
   [SoD](https://www.house.gov/the-house-explained/open-government/statement-of-disbursements)
   and [archive](https://www.house.gov/the-house-explained/open-government/statement-of-disbursements/archive)
@@ -125,19 +140,21 @@ maintains the tracked archive index.
 
 ### `scripts/fetch_biographical.py`
 
-Produces the enrichment / reference inputs `analysis.ipynb` reads locally, so
-the notebook is reproducible offline (network retrieval stays out of the
-notebook per the project's notebook discipline):
+Produces the enrichment / reference inputs that `analysis_v3.ipynb` reads
+from `data/`, so the notebook is reproducible offline (network retrieval
+stays out of the notebook per the project's notebook discipline):
 
-- `propublica_members.csv` — member `id → gender / party / name`, built from
-  the canonical, still-maintained
+- `data/propublica_members.csv` — member `id → gender / party / name`, built
+  from the canonical, still-maintained
   [congress-legislators](https://unitedstates.github.io/congress-legislators/)
   roster (the legacy ProPublica Congress API this file is named after returns
   HTTP 410 / has been retired).
-- `legislators-historical.csv` — raw congress-legislators historical roster.
-- `census_state.txt`, `census_cenpop2020.csv` — Census ANSI state codes and
-  2020 [centers of population](https://www.census.gov/geographies/reference-files/time-series/geo/centers-population.html).
-- `member_data_2015_2023.csv` — House Clerk `MemberData.xml` office
+- `data/legislators-historical.csv` — raw congress-legislators historical
+  roster.
+- `data/census_state.txt`, `data/census_cenpop2020.csv` — Census ANSI state
+  codes and 2020
+  [centers of population](https://www.census.gov/geographies/reference-files/time-series/geo/centers-population.html).
+- `data/member_data_2015_2023.csv` — House Clerk `MemberData.xml` office
   building/room via the Wayback Machine, with a **live clerk.house.gov
   fallback** so a valid file always exists.
 
@@ -173,8 +190,8 @@ Each quarter is one file at the archive, named
 `YYYYQ#-house-disburse-detail only.csv` (2023–2024), or
 `YYYYQ#-house-disburse-details only.xlsx` (2025) — see the per-file table
 below and `data/SOURCE_MANIFEST.csv` for exact sizes and SHA-256 checksums.
-The raw files (~1 GB) are gitignored; retrieve them with
-`python scripts/fetch_data.py`.
+The raw files (~1 GB) are gitignored and live under `data/disbursements/`;
+retrieve them with `python scripts/fetch_data.py`.
 
 ### Per-file describe table
 
@@ -285,7 +302,7 @@ python scripts/fetch_data.py          # raw files -> data/  (~1 GB)
 python scripts/fetch_biographical.py  # enrichment inputs (cached locally)
 
 jupyter nbconvert --to notebook --execute --inplace cleaning.ipynb
-jupyter nbconvert --to notebook --execute --inplace analysis.ipynb
+jupyter nbconvert --to notebook --execute --inplace analysis_v3.ipynb
 ```
 
 Released under an [MIT License](LICENSE).
