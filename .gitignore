@@ -233,3 +233,5 @@ __marimo__/
 
 # Claude
 .claude/worktrees/
+all_disbursements.csv
+analysis.ipynb
